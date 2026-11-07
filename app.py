@@ -63,6 +63,7 @@ page = st.sidebar.radio(
     [
         "Market Overview",
         "Brent Analytics",
+        "Brent Futures Market Structure",
         "Oil Market Fundamentals",
         "European Fuel Markets",
         "Commercial Scenarios",
@@ -672,7 +673,172 @@ elif page == "Oil Market Fundamentals":
         "Inventory changes alone do not establish "
         "the cause of a market move or predict prices."
     )
-    
+
+elif page == "Brent Futures Market Structure":
+
+    st.header("Brent Futures Market Structure")
+
+    st.caption(
+        "ICE Brent crude futures | 6 November 2026 "
+        "| Delayed last-trade price snapshot"
+    )
+
+    # Load futures curve
+    futures = pd.read_csv(
+        DATA_DIR / "brent_futures_curve.csv",
+        parse_dates=["Delivery_Month", "Observation_Date"]
+    )
+
+    futures = futures.sort_values(
+        "Delivery_Month"
+    ).reset_index(drop=True)
+
+    prices = futures["Price_USD_bbl"]
+
+    # Calculate calendar spreads
+    m1 = prices.iloc[0]
+    m2 = prices.iloc[1]
+    m6 = prices.iloc[5]
+
+    m1_m2 = m1 - m2
+    m1_m6 = m1 - m6
+
+    if m1_m2 > 0:
+        structure = "Backwardation"
+    elif m1_m2 < 0:
+        structure = "Contango"
+    else:
+        structure = "Flat"
+
+    # Market metrics
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric(
+        "M1-M2 Spread",
+        f"${m1_m2:+.2f}/bbl"
+    )
+
+    col2.metric(
+        "M1-M6 Spread",
+        f"${m1_m6:+.2f}/bbl"
+    )
+
+    col3.metric(
+        "Front-End Structure",
+        structure
+    )
+
+    # Interactive futures curve
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=futures["Delivery_Month"],
+        y=futures["Price_USD_bbl"],
+        mode="lines+markers",
+        name="ICE Brent Futures",
+        line=dict(width=3),
+        marker=dict(size=8),
+        hovertemplate=(
+            "%{x|%b %Y}<br>"
+            "$%{y:.2f}/bbl"
+            "<extra></extra>"
+        )
+    ))
+
+    fig.update_layout(
+        title="Brent Futures Forward Curve",
+        xaxis_title="Delivery Month",
+        yaxis_title="USD per barrel",
+        template="plotly_white",
+        hovermode="x unified"
+    )
+
+    st.plotly_chart(fig, width="stretch")
+
+    # Monthly calendar spreads
+    st.subheader("Adjacent-Month Calendar Spreads")
+
+    futures["Calendar_Spread"] = (
+        futures["Price_USD_bbl"]
+        - futures["Price_USD_bbl"].shift(-1)
+    )
+
+    spread_data = futures.iloc[:-1].copy()
+
+    fig_spread = go.Figure()
+
+    fig_spread.add_trace(go.Bar(
+        x=spread_data["Delivery_Month"],
+        y=spread_data["Calendar_Spread"],
+        name="Monthly Calendar Spread"
+    ))
+
+    fig_spread.add_hline(
+        y=0,
+        line_dash="dash"
+    )
+
+    fig_spread.update_layout(
+        title="Brent Adjacent-Month Futures Spreads",
+        xaxis_title="Nearer Delivery Month",
+        yaxis_title="USD per barrel",
+        template="plotly_white"
+    )
+
+    st.plotly_chart(fig_spread, width="stretch")
+
+    # Automated market commentary
+    st.subheader("Market Structure Insights")
+
+    if structure == "Backwardation":
+        commentary = (
+            f"The front of the Brent futures curve "
+            f"is in backwardation. The first contract "
+            f"trades ${m1_m2:.2f}/bbl above the second "
+            f"contract and ${m1_m6:.2f}/bbl above "
+            f"the sixth contract. This structure "
+            f"can be consistent with stronger "
+            f"near-term crude valuations."
+        )
+
+    elif structure == "Contango":
+        commentary = (
+            f"The front of the Brent futures curve "
+            f"is in contango. The second contract "
+            f"trades ${abs(m1_m2):.2f}/bbl above "
+            f"the first contract. Contango can "
+            f"support storage economics when "
+            f"the spread covers carrying costs."
+        )
+
+    else:
+        commentary = (
+            "The first two Brent futures contracts "
+            "are trading at approximately the same price."
+        )
+
+    st.info(commentary)
+
+    st.caption(
+        "Source: ICE Futures Europe, Brent Crude Futures. "
+        "Snapshot dated 6 November 2026. "
+        "Prices are delayed last-trade observations, "
+        "not official settlement prices. "
+        "Calendar spreads are calculated as "
+        "nearer-month minus later-month prices. "
+        "This is a static historical snapshot."
+    )
+
+    with st.expander("View futures contract data"):
+        st.dataframe(
+            futures[
+                ["Contract", "Price_USD_bbl",
+                 "Calendar_Spread"]
+            ],
+            width="stretch",
+            hide_index=True
+        )
+
 elif page == "Commercial Scenarios":
 
     st.header("Crude Purchase Cost Sensitivity")
