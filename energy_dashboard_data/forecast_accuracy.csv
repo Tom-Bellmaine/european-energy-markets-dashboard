@@ -1,0 +1,5 @@
+Commodity,Model_MAE,Naive_MAE,Model_Beats_Naive
+Brent,19.647,19.915,True
+WTI,11.626,11.734,True
+Diesel,16.591,18.493,True
+Gasoline,9.897,9.814,False
