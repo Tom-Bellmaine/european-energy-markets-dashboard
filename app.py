@@ -1,6 +1,4 @@
-import streamlit as st
-st.title("Dashboard connection test")
-st.stop()
+
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
