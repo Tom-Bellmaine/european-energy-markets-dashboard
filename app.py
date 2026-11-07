@@ -297,6 +297,67 @@ elif page == "Brent Analytics":
             "not futures calendar spreads."
         )
 
+
+
+
+
+
+
+
+        # AUTOMATED CRUDE MARKET INSIGHTS
+        st.divider()
+        st.subheader("Crude Market Insights")
+
+        difference_from_average = (
+            latest_spread - average_spread
+        )
+
+        if difference_from_average > 0:
+            relative_position = "above"
+        elif difference_from_average < 0:
+            relative_position = "below"
+        else:
+            relative_position = "equal to"
+
+        if pd.isna(four_week_change):
+            spread_direction = "Insufficient history"
+        elif four_week_change > 0:
+            spread_direction = "Widening"
+        elif four_week_change < 0:
+            spread_direction = "Narrowing"
+        else:
+            spread_direction = "Unchanged"
+
+        col1, col2 = st.columns(2)
+
+        col1.metric(
+            "Spread vs Period Average",
+            f"{difference_from_average:+.2f} USD/bbl"
+        )
+
+        col2.metric(
+            "Four-Week Spread Direction",
+            spread_direction
+        )
+
+        st.info(
+            f"The Brent–WTI spread is currently "
+            f"${latest_spread:.2f}/bbl, "
+            f"{abs(difference_from_average):.2f} USD/bbl "
+            f"{relative_position} its {spread_period.lower()} "
+            f"average of ${average_spread:.2f}/bbl. "
+            f"Over approximately four weeks, the "
+            f"spread has changed by "
+            f"{four_week_change:+.2f} USD/bbl."
+        )
+
+        st.caption(
+            "Automated descriptive analysis based on "
+            "historical spot prices. Spread movements "
+            "alone do not establish their causes or "
+            "constitute trading recommendations."
+        )
+
 elif page == "European Fuel Markets":
 
     st.header("Northwest European Fuel Markets")
