@@ -63,6 +63,7 @@ page = st.sidebar.radio(
     [
         "Market Overview",
         "Brent Analytics",
+        "Refining Crack Spreads",
         "Brent Futures Market Structure",
         "Oil Market Fundamentals",
         "European Fuel Markets",
@@ -946,4 +947,199 @@ elif page == "Data & Methodology":
     st.write(
         "Country observations:",
         len(countries)
+    )
+
+# REFINING CRACK SPREAD ANALYSIS
+if page == "Refining Crack Spreads":
+
+    st.header("Diesel & Gasoline Crack Spread Analysis")
+
+    st.caption(
+        "Brent crude versus New York Harbor wholesale "
+        "diesel and gasoline spot benchmarks"
+    )
+
+    crack_file = DATA_DIR / "refining_crack_spreads.csv"
+
+    if not crack_file.exists():
+        st.error("Upload refining_crack_spreads.csv to GitHub.")
+        st.stop()
+
+    @st.cache_data
+    def load_cracks():
+        df = pd.read_csv(crack_file, parse_dates=["Date"])
+        return df.sort_values("Date")
+
+    cracks = load_cracks()
+
+    period = st.selectbox(
+        "Historical period",
+        ["1 Year", "3 Years", "5 Years", "10 Years", "All Data"],
+        index=1,
+        key="crack_period"
+    )
+
+    data = cracks.copy()
+
+    if period != "All Data":
+        years = int(period.split()[0])
+        cutoff = data["Date"].max() - pd.DateOffset(years=years)
+        data = data[data["Date"] >= cutoff].copy()
+
+    if data.empty:
+        st.warning("No data for this period.")
+        st.stop()
+
+    latest = data.iloc[-1]
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.metric(
+        "Diesel Crack",
+        f"${latest['Diesel_Crack']:.2f}/bbl"
+    )
+
+    c2.metric(
+        "Gasoline Crack",
+        f"${latest['Gasoline_Crack']:.2f}/bbl"
+    )
+
+    c3.metric(
+        "Illustrative 3:2:1 Crack",
+        f"${latest['Crack_321']:.2f}/bbl"
+    )
+
+    st.caption(
+        f"Latest matched observation: "
+        f"{latest['Date']:%d %B %Y}"
+    )
+
+    # HISTORICAL CRACK SPREAD CHART
+    st.subheader("Historical Product Crack Spreads")
+
+    fig = go.Figure()
+
+    for column, label in [
+        ("Diesel_Crack", "Diesel Crack"),
+        ("Gasoline_Crack", "Gasoline Crack"),
+        ("Crack_321", "3:2:1 Crack")
+    ]:
+        fig.add_trace(go.Scatter(
+            x=data["Date"],
+            y=data[column],
+            mode="lines",
+            name=label
+        ))
+
+    fig.add_hline(y=0, line_dash="dash", line_color="gray")
+
+    fig.update_layout(
+        xaxis_title="Date",
+        yaxis_title="USD per barrel",
+        hovermode="x unified",
+        template="plotly_white"
+    )
+
+    st.plotly_chart(fig, width="stretch")
+
+    # HISTORICAL COMPARISON
+    st.subheader("Crack Spread Market Insights")
+
+    diesel_average = data["Diesel_Crack"].mean()
+    gasoline_average = data["Gasoline_Crack"].mean()
+
+    c1, c2 = st.columns(2)
+
+    c1.metric(
+        "Period Average Diesel Crack",
+        f"${diesel_average:.2f}/bbl"
+    )
+
+    c2.metric(
+        "Period Average Gasoline Crack",
+        f"${gasoline_average:.2f}/bbl"
+    )
+
+    diesel_difference = (
+        latest["Diesel_Crack"] - diesel_average
+    )
+
+    if diesel_difference > 0:
+        direction = "above"
+    elif diesel_difference < 0:
+        direction = "below"
+    else:
+        direction = "equal to"
+
+    st.info(
+        f"The latest diesel crack is "
+        f"${abs(diesel_difference):.2f}/bbl "
+        f"{direction} its selected-period average. "
+        "This describes relative benchmark pricing, "
+        "not a refinery's realised profit."
+    )
+
+    # REFINING MARGIN SENSITIVITY
+    st.subheader("Refining Margin Sensitivity")
+
+    st.write(
+        "Illustrative 3:2:1 margin sensitivity "
+        "to changes in crude and product prices."
+    )
+
+    crude_change = st.slider(
+        "Brent price change (USD/bbl)",
+        -30.0, 30.0, 0.0, 1.0,
+        key="crack_crude_change"
+    )
+
+    diesel_change = st.slider(
+        "Diesel price change (USD/bbl)",
+        -30.0, 30.0, 0.0, 1.0,
+        key="crack_diesel_change"
+    )
+
+    gasoline_change = st.slider(
+        "Gasoline price change (USD/bbl)",
+        -30.0, 30.0, 0.0, 1.0,
+        key="crack_gasoline_change"
+    )
+
+    revised_margin = (
+        2 * (
+            latest["Gasoline_USD_bbl"]
+            + gasoline_change
+        )
+        + (
+            latest["Diesel_USD_bbl"]
+            + diesel_change
+        )
+        - 3 * (
+            latest["Brent"] + crude_change
+        )
+    ) / 3
+
+    st.metric(
+        "Scenario 3:2:1 Crack",
+        f"${revised_margin:.2f}/bbl",
+        delta=(
+            f"${revised_margin - latest['Crack_321']:+.2f}/bbl"
+        )
+    )
+
+    st.divider()
+
+    st.caption(
+        "Source: EIA spot price series via FRED. "
+        "Diesel: New York Harbor ultra-low-sulfur diesel. "
+        "Gasoline: New York Harbor conventional regular. "
+        "Crude: Brent spot. "
+        "Product prices converted using 42 US gallons "
+        "per barrel. The 3:2:1 crack assumes two barrels "
+        "of gasoline and one barrel of diesel per three "
+        "barrels of crude. These are indicative "
+        "cross-market benchmark spreads, not European "
+        "ARA crack spreads or realised refinery margins. "
+        "Excludes yields, freight, operating costs, "
+        "quality differences and other adjustments."
     )
