@@ -237,6 +237,113 @@ elif page == "European Fuel Markets":
         "product assessments."
     )
 
+
+
+    
+    # DIESEL PRICE DIFFERENTIAL ANALYSIS
+    st.divider()
+    st.subheader("European Diesel Price Differentials")
+
+    st.caption(
+        "Compare national diesel prices excluding taxes. "
+        "These are not wholesale trading spreads."
+    )
+
+    country_a = st.selectbox(
+        "First country",
+        ["Netherlands", "Germany", "France", "Belgium"],
+        key="country_a"
+    )
+
+    country_b = st.selectbox(
+        "Second country",
+        ["Germany", "France", "Belgium", "Netherlands"],
+        key="country_b"
+    )
+
+    diesel_data = countries[
+        countries["Country"].isin([country_a, country_b])
+    ][["Date", "Country", "Diesel"]].copy()
+
+    if country_a == country_b:
+        st.warning("Please select two different countries.")
+
+    else:
+        diesel_data = diesel_data.pivot_table(
+            index="Date",
+            columns="Country",
+            values="Diesel",
+            aggfunc="mean"
+        ).sort_index()
+
+        if not all(
+            c in diesel_data.columns
+            for c in [country_a, country_b]
+        ):
+            st.warning("Insufficient data for this comparison.")
+
+        else:
+            diesel_data = diesel_data[
+                [country_a, country_b]
+            ].dropna()
+
+            if diesel_data.empty:
+                st.warning("No overlapping price observations.")
+
+            else:
+                diesel_data["Differential"] = (
+                    diesel_data[country_a]
+                    - diesel_data[country_b]
+                )
+
+                latest = diesel_data["Differential"].iloc[-1]
+                average = diesel_data["Differential"].mean()
+
+                col1, col2 = st.columns(2)
+
+                col1.metric(
+                    "Latest differential",
+                    f"€{latest:,.2f} / 1,000 L"
+                )
+
+                col2.metric(
+                    "Historical average differential",
+                    f"€{average:,.2f} / 1,000 L"
+                )
+
+                fig_diff = go.Figure()
+
+                fig_diff.add_trace(go.Scatter(
+                    x=diesel_data.index,
+                    y=diesel_data["Differential"],
+                    mode="lines",
+                    name=f"{country_a} minus {country_b}"
+                ))
+
+                fig_diff.add_hline(
+                    y=0,
+                    line_dash="dash",
+                    line_color="gray"
+                )
+
+                fig_diff.update_layout(
+                    title=f"Diesel Differential: {country_a} vs {country_b}",
+                    xaxis_title="Date",
+                    yaxis_title="EUR per 1,000 litres",
+                    template="plotly_white"
+                )
+
+                st.plotly_chart(
+                    fig_diff,
+                    width="stretch"
+                )
+
+                st.caption(
+                    "A positive differential means diesel is "
+                    f"more expensive in {country_a} than {country_b}. "
+                    "This is not an executable arbitrage margin."
+                )
+
 elif page == "Commercial Scenarios":
 
     st.header("Crude Purchase Cost Sensitivity")
