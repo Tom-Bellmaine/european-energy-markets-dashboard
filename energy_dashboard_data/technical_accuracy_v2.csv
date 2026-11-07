@@ -1,0 +1,7 @@
+Market,Horizon_Days,Flat_MAE,Ridge_MAE,ML_MAE,Best_Backtest_Model,Test_Observations
+Brent,5,3.753,3.8,3.801,Flat,90
+Brent,20,6.634,7.146,6.91,Flat,90
+Brent,60,11.59,12.252,12.705,Flat,89
+WTI,5,3.153,3.247,3.211,Flat,94
+WTI,20,6.154,6.667,6.196,Flat,94
+WTI,60,10.44,11.357,10.746,Flat,93
