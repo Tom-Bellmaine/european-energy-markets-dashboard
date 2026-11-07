@@ -1143,3 +1143,186 @@ if page == "Refining Crack Spreads":
         "Excludes yields, freight, operating costs, "
         "quality differences and other adjustments."
     )
+
+# ============================================================
+# CRUDE & REFINED PRODUCTS PRICE FORECASTING
+# ============================================================
+
+st.divider()
+st.header("Crude & Refined Products Price Forecasting")
+
+st.caption(
+    "Statistical forecasts using historical spot benchmark prices. "
+    "For research and scenario analysis, not trading recommendations."
+)
+
+forecast_file = DATA_DIR / "energy_price_forecasts.csv"
+accuracy_file = DATA_DIR / "forecast_accuracy.csv"
+
+if forecast_file.exists() and accuracy_file.exists():
+
+    forecasts = pd.read_csv(
+        forecast_file, parse_dates=["Date", "Last_Actual_Date"]
+    )
+
+    accuracy = pd.read_csv(accuracy_file)
+
+    commodity = st.selectbox(
+        "Select commodity",
+        ["Brent", "WTI", "Diesel", "Gasoline"],
+        key="price_forecast_commodity"
+    )
+
+    horizon = st.selectbox(
+        "Forecast horizon",
+        [30, 60, 90],
+        format_func=lambda x: f"{x} Days",
+        key="price_forecast_horizon"
+    )
+
+    selected = (
+        forecasts[forecasts["Commodity"] == commodity]
+        .sort_values("Date")
+        .copy()
+    )
+
+    if not selected.empty:
+
+        latest_date = selected["Last_Actual_Date"].iloc[0]
+
+        end_date = latest_date + pd.Timedelta(
+            days=horizon
+        )
+
+        selected = selected[
+            selected["Date"] <= end_date
+        ]
+
+        if not selected.empty:
+
+            latest = selected.iloc[-1]
+            start_price = float(latest["Last_Actual"])
+            forecast_price = float(latest["Forecast"])
+
+            change_pct = (
+                (forecast_price / start_price - 1) * 100
+                if start_price != 0 else 0
+            )
+
+            col1, col2, col3 = st.columns(3)
+
+            col1.metric(
+                "Latest Historical Price",
+                f"${start_price:,.2f}/bbl"
+            )
+
+            col2.metric(
+                "Forecast Price",
+                f"${forecast_price:,.2f}/bbl",
+                delta=f"{change_pct:+.2f}%"
+            )
+
+            col3.metric(
+                "Approximate 80% Range",
+                (
+                    f"${latest['Lower_80']:,.2f}"
+                    f" – ${latest['Upper_80']:,.2f}"
+                )
+            )
+
+            fig = go.Figure()
+
+            fig.add_trace(go.Scatter(
+                x=selected["Date"],
+                y=selected["Upper_80"],
+                mode="lines",
+                line=dict(width=0),
+                showlegend=False,
+                hoverinfo="skip"
+            ))
+
+            fig.add_trace(go.Scatter(
+                x=selected["Date"],
+                y=selected["Lower_80"],
+                mode="lines",
+                line=dict(width=0),
+                fill="tonexty",
+                fillcolor="rgba(80,130,220,0.18)",
+                name="Approximate 80% Range"
+            ))
+
+            fig.add_trace(go.Scatter(
+                x=selected["Date"],
+                y=selected["Forecast"],
+                mode="lines",
+                line=dict(color="royalblue", width=3),
+                name="Statistical Forecast"
+            ))
+
+            fig.add_trace(go.Scatter(
+                x=[latest_date],
+                y=[start_price],
+                mode="markers",
+                marker=dict(size=10, color="black"),
+                name="Last Actual Price"
+            ))
+
+            fig.update_layout(
+                title=f"{commodity} Price Forecast",
+                xaxis_title="Date",
+                yaxis_title="USD per barrel",
+                hovermode="x unified",
+                height=480
+            )
+
+            st.plotly_chart(
+                fig, use_container_width=True
+            )
+
+            st.subheader("Forecast Model Performance")
+
+            result = accuracy[
+                accuracy["Commodity"] == commodity
+            ]
+
+            if not result.empty:
+
+                result = result.iloc[0]
+
+                c1, c2 = st.columns(2)
+
+                c1.metric(
+                    "ARIMA Mean Absolute Error",
+                    f"${result['Model_MAE']:.2f}/bbl"
+                )
+
+                c2.metric(
+                    "No-Change Benchmark Error",
+                    f"${result['Naive_MAE']:.2f}/bbl"
+                )
+
+                if result["Model_MAE"] < result["Naive_MAE"]:
+                    st.success(
+                        "ARIMA outperformed the no-change "
+                        "benchmark in the historical test."
+                    )
+                else:
+                    st.warning(
+                        "ARIMA did not outperform the no-change "
+                        "benchmark in the historical test."
+                    )
+
+            st.info(
+                f"Latest historical observation: "
+                f"{latest_date:%d %B %Y}. "
+                "Forecasts are generated from historical price "
+                "changes. These projections are uncertain and "
+                "should not be interpreted as market futures prices."
+            )
+
+else:
+    st.warning(
+        "Forecast files are missing. Upload "
+        "energy_price_forecasts.csv and forecast_accuracy.csv "
+        "to the energy_dashboard_data folder."
+    )
