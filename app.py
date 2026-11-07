@@ -1230,8 +1230,51 @@ if forecast_file.exists() and accuracy_file.exists():
                 )
             )
 
+
+            # IMPROVED FORECAST CHART
+            history_file = DATA_DIR / "forecast_price_history.csv"
+
             fig = go.Figure()
 
+            if history_file.exists():
+                price_history = pd.read_csv(
+                    history_file, parse_dates=["Date"]
+                )
+
+                historical = (
+                    price_history[
+                        price_history["Commodity"] == commodity
+                    ]
+                    .sort_values("Date")
+                )
+
+                fig.add_trace(go.Scatter(
+                    x=historical["Date"],
+                    y=historical["Price"],
+                    mode="lines",
+                    line=dict(color="#2563eb", width=2.5),
+                    name="Actual Historical Price"
+                ))
+
+            # Connect the forecast to the last actual price
+            forecast_dates = [latest_date] + selected["Date"].tolist()
+            forecast_values = (
+                [start_price] + selected["Forecast"].tolist()
+            )
+
+            fig.add_trace(go.Scatter(
+                x=forecast_dates,
+                y=forecast_values,
+                mode="lines",
+                line=dict(
+                    color="#ea580c",
+                    width=3,
+                    dash="dash"
+                ),
+                name="Forecast"
+            ))
+
+            # Light uncertainty band
             fig.add_trace(go.Scatter(
                 x=selected["Date"],
                 y=selected["Upper_80"],
@@ -1247,32 +1290,39 @@ if forecast_file.exists() and accuracy_file.exists():
                 mode="lines",
                 line=dict(width=0),
                 fill="tonexty",
-                fillcolor="rgba(80,130,220,0.18)",
+                fillcolor="rgba(234,88,12,0.10)",
                 name="Approximate 80% Range"
             ))
 
-            fig.add_trace(go.Scatter(
-                x=selected["Date"],
-                y=selected["Forecast"],
-                mode="lines",
-                line=dict(color="royalblue", width=3),
-                name="Statistical Forecast"
-            ))
+            # Mark where historical data ends
+            fig.add_vline(
+                x=latest_date.timestamp() * 1000,
+                line_dash="dot",
+                line_color="gray",
+                annotation_text="Forecast begins",
+                annotation_position="top right"
+            )
 
+            # Highlight the final forecast price
             fig.add_trace(go.Scatter(
-                x=[latest_date],
-                y=[start_price],
+                x=[latest["Date"]],
+                y=[forecast_price],
                 mode="markers",
-                marker=dict(size=10, color="black"),
-                name="Last Actual Price"
+                marker=dict(
+                    color="#ea580c",
+                    size=10
+                ),
+                name="Forecast End"
             ))
 
             fig.update_layout(
-                title=f"{commodity} Price Forecast",
+                title=f"{commodity}: Historical Prices & Forecast",
                 xaxis_title="Date",
                 yaxis_title="USD per barrel",
                 hovermode="x unified",
-                height=480
+                height=500,
+                legend=dict(orientation="h", y=1.12),
+                margin=dict(t=100)
             )
 
             st.plotly_chart(
