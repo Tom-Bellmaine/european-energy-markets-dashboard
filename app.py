@@ -1376,3 +1376,719 @@ else:
         "energy_price_forecasts.csv and forecast_accuracy.csv "
         "to the energy_dashboard_data folder."
     )
+
+# ============================================================
+# TECHNICAL FORECASTING & MODEL COMPARISON
+# ============================================================
+
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
+from pathlib import Path
+
+DATA_DIR_V2 = Path("energy_dashboard_data")
+
+@st.cache_data
+def load_technical_data_v2():
+    forecasts = pd.read_csv(
+        DATA_DIR_V2 / "technical_forecasts_v2.csv"
+    )
+    accuracy = pd.read_csv(
+        DATA_DIR_V2 / "technical_accuracy_v2.csv"
+    )
+    signals = pd.read_csv(
+        DATA_DIR_V2 / "technical_signals_v2.csv"
+    )
+
+    forecasts.columns = forecasts.columns.str.strip()
+    accuracy.columns = accuracy.columns.str.strip()
+    signals.columns = signals.columns.str.strip()
+
+    return forecasts, accuracy, signals
+
+
+with st.expander(
+    "📈 Technical Forecasting & Model Comparison",
+    expanded=False
+):
+    st.subheader("Crude Oil Technical Price Forecasts")
+    st.caption(
+        "Brent and WTI | Statistical models, technical indicators "
+        "and historical out-of-sample model comparison"
+    )
+
+    try:
+        tf, ta, ts = load_technical_data_v2()
+
+        required_forecast = {
+            "Market", "Horizon_Days", "Model",
+            "Last_Price", "Forecast_Price"
+        }
+        required_accuracy = {
+            "Market", "Horizon_Days",
+            "Flat_MAE", "Ridge_MAE", "ML_MAE"
+        }
+
+        if not required_forecast.issubset(tf.columns):
+            st.error(
+                "Technical forecast CSV columns do not match. "
+                f"Available columns: {list(tf.columns)}"
+            )
+            st.stop()
+
+        if not required_accuracy.issubset(ta.columns):
+            st.error(
+                "Technical accuracy CSV columns do not match. "
+                f"Available columns: {list(ta.columns)}"
+            )
+            st.stop()
+
+        c1, c2 = st.columns(2)
+
+        with c1:
+            market_v2 = st.selectbox(
+                "Select crude benchmark",
+                sorted(tf["Market"].dropna().unique()),
+                key="technical_market_v2"
+            )
+
+        with c2:
+            horizons_v2 = sorted(
+                tf.loc[
+                    tf["Market"] == market_v2,
+                    "Horizon_Days"
+                ].dropna().astype(int).unique()
+            )
+
+            horizon_v2 = st.selectbox(
+                "Forecast horizon",
+                horizons_v2,
+                format_func=lambda x: f"{x} days",
+                key="technical_horizon_v2"
+            )
+
+        selected = tf[
+            (tf["Market"] == market_v2)
+            & (tf["Horizon_Days"] == horizon_v2)
+        ].copy()
+
+        selected["Forecast_Price"] = pd.to_numeric(
+            selected["Forecast_Price"], errors="coerce"
+        )
+        selected["Last_Price"] = pd.to_numeric(
+            selected["Last_Price"], errors="coerce"
+        )
+        selected = selected.dropna(
+            subset=["Forecast_Price", "Last_Price"]
+        )
+
+        if selected.empty:
+            st.warning("No forecasts for this selection.")
+        else:
+            latest_price = float(
+                selected["Last_Price"].iloc[0]
+            )
+
+            model_order = [
+                "Flat", "Ridge", "Machine Learning"
+            ]
+
+            model_prices = {
+                str(row["Model"]): float(row["Forecast_Price"])
+                for _, row in selected.iterrows()
+            }
+
+            st.markdown("#### Model price targets")
+
+            metric_cols = st.columns(3)
+
+            for col, model in zip(metric_cols, model_order):
+                price = model_prices.get(model)
+
+                with col:
+                    if price is not None:
+                        pct = (
+                            (price / latest_price - 1) * 100
+                            if latest_price != 0 else 0
+                        )
+                        st.metric(
+                            model,
+                            f"${price:,.2f}/bbl",
+                            f"{pct:+.2f}%"
+                        )
+                    else:
+                        st.metric(model, "N/A")
+
+            st.caption(
+                f"Last observed {market_v2} price: "
+                f"${latest_price:,.2f}/bbl. "
+                "Model targets are indicative, not guaranteed outcomes."
+            )
+
+            fig = go.Figure()
+
+            fig.add_hline(
+                y=latest_price,
+                line_dash="dash",
+                line_color="gray",
+                annotation_text="Last actual price"
+            )
+
+            colors = {
+                "Flat": "#64748b",
+                "Ridge": "#2563eb",
+                "Machine Learning": "#ea580c"
+            }
+
+            for model in model_order:
+                if model in model_prices:
+                    fig.add_trace(
+                        go.Bar(
+                            x=[model],
+                            y=[model_prices[model]],
+                            name=model,
+                            marker_color=colors[model],
+                            text=[
+                                f"${model_prices[model]:.2f}"
+                            ],
+                            textposition="outside"
+                        )
+                    )
+
+            fig.update_layout(
+                title=(
+                    f"{market_v2}: {horizon_v2}-Day "
+                    "Model Forecast Comparison"
+                ),
+                yaxis_title="USD per barrel",
+                xaxis_title="Forecast model",
+                height=450,
+                showlegend=False,
+                margin=dict(t=70)
+            )
+
+            st.plotly_chart(
+                fig,
+                use_container_width=True,
+                key="technical_model_chart_v2"
+            )
+
+        # ------------------------------------------
+        # HISTORICAL FORECAST ACCURACY
+        # ------------------------------------------
+
+        st.markdown("#### Historical Model Accuracy")
+
+        accuracy_row = ta[
+            (ta["Market"] == market_v2)
+            & (ta["Horizon_Days"] == horizon_v2)
+        ]
+
+        if not accuracy_row.empty:
+            a = accuracy_row.iloc[0]
+
+            mae_values = {
+                "Flat": float(a["Flat_MAE"]),
+                "Ridge": float(a["Ridge_MAE"]),
+                "Machine Learning": float(a["ML_MAE"])
+            }
+
+            best_model = min(
+                mae_values, key=mae_values.get
+            )
+
+            st.success(
+                f"Best historical model: {best_model} "
+                f"| MAE: ${mae_values[best_model]:.2f}/bbl"
+            )
+
+            accuracy_chart = go.Figure()
+
+            accuracy_chart.add_trace(
+                go.Bar(
+                    x=list(mae_values.keys()),
+                    y=list(mae_values.values()),
+                    marker_color=[
+                        "#16a34a" if m == best_model
+                        else "#94a3b8"
+                        for m in mae_values
+                    ],
+                    text=[
+                        f"${v:.2f}"
+                        for v in mae_values.values()
+                    ],
+                    textposition="outside"
+                )
+            )
+
+            accuracy_chart.update_layout(
+                title="Backtested Mean Absolute Error",
+                yaxis_title="MAE (USD per barrel)",
+                xaxis_title="Model",
+                height=380
+            )
+
+            st.plotly_chart(
+                accuracy_chart,
+                use_container_width=True,
+                key="technical_accuracy_chart_v2"
+            )
+
+            st.caption(
+                "Lower MAE is better. These results measure "
+                "historical out-of-sample forecast error, "
+                "not certainty about future prices."
+            )
+
+        # ------------------------------------------
+        # TECHNICAL SIGNALS
+        # ------------------------------------------
+
+        st.markdown("#### Technical Market Signals")
+
+        signal_row = ts[ts["Market"] == market_v2]
+
+        if not signal_row.empty:
+            s = signal_row.iloc[0]
+
+            signal_cols = st.columns(3)
+
+            with signal_cols[0]:
+                if "RSI_14" in ts.columns:
+                    st.metric(
+                        "14-Day RSI",
+                        f"{float(s['RSI_14']):.1f}"
+                    )
+
+            with signal_cols[1]:
+                if "MACD_Signal_Gap" in ts.columns:
+                    st.metric(
+                        "MACD Signal Gap",
+                        f"{float(s['MACD_Signal_Gap']):+.4f}"
+                    )
+
+            with signal_cols[2]:
+                if "Trend" in ts.columns:
+                    st.metric(
+                        "Technical Trend",
+                        str(s["Trend"])
+                    )
+
+            if "RSI_14" in ts.columns:
+                rsi = float(s["RSI_14"])
+
+                if rsi >= 70:
+                    st.info(
+                        "RSI is above 70: traditionally "
+                        "interpreted as overbought."
+                    )
+                elif rsi <= 30:
+                    st.info(
+                        "RSI is below 30: traditionally "
+                        "interpreted as oversold."
+                    )
+                else:
+                    st.info(
+                        "RSI is between 30 and 70: "
+                        "neither conventional extreme is triggered."
+                    )
+
+        # ------------------------------------------
+        # DATA & METHODOLOGY
+        # ------------------------------------------
+
+        with st.expander("Forecast methodology and raw data"):
+            st.write(
+                "Flat is a no-change price baseline. "
+                "Ridge is regularised linear regression. "
+                "Machine Learning is the fitted nonlinear "
+                "model from the Colab analysis."
+            )
+
+            st.write(
+                "Forecasts are model scenarios, not "
+                "market-implied forward prices. "
+                "Historical accuracy should be evaluated "
+                "using time-ordered, out-of-sample observations. "
+                "Technical indicators are descriptive and "
+                "do not establish causation."
+            )
+
+            st.dataframe(selected, use_container_width=True)
+            st.dataframe(ta, use_container_width=True)
+            st.dataframe(ts, use_container_width=True)
+
+            st.caption(
+                "Source: project historical price datasets "
+                "and Python model calculations. "
+                "Forecast dates and last-observation dates "
+                "are determined by the exported CSV snapshot."
+            )
+
+    except FileNotFoundError as error:
+        st.error(
+            f"Missing data file: {error}. "
+            "Check the energy_dashboard_data folder on GitHub."
+        )
+    except Exception as error:
+        st.error(
+            f"Technical forecasting section could not load: {error}"
+        )
+
+# ============================================================
+# TECHNICAL FORECASTING & MODEL COMPARISON
+# ============================================================
+
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
+from pathlib import Path
+
+DATA_DIR_V2 = Path("energy_dashboard_data")
+
+@st.cache_data
+def load_technical_data_v2():
+    forecasts = pd.read_csv(
+        DATA_DIR_V2 / "technical_forecasts_v2.csv"
+    )
+    accuracy = pd.read_csv(
+        DATA_DIR_V2 / "technical_accuracy_v2.csv"
+    )
+    signals = pd.read_csv(
+        DATA_DIR_V2 / "technical_signals_v2.csv"
+    )
+
+    forecasts.columns = forecasts.columns.str.strip()
+    accuracy.columns = accuracy.columns.str.strip()
+    signals.columns = signals.columns.str.strip()
+
+    return forecasts, accuracy, signals
+
+
+with st.expander(
+    "📈 Technical Forecasting & Model Comparison",
+    expanded=False
+):
+    st.subheader("Crude Oil Technical Price Forecasts")
+    st.caption(
+        "Brent and WTI | Statistical models, technical indicators "
+        "and historical out-of-sample model comparison"
+    )
+
+    try:
+        tf, ta, ts = load_technical_data_v2()
+
+        required_forecast = {
+            "Market", "Horizon_Days", "Model",
+            "Last_Price", "Forecast_Price"
+        }
+        required_accuracy = {
+            "Market", "Horizon_Days",
+            "Flat_MAE", "Ridge_MAE", "ML_MAE"
+        }
+
+        if not required_forecast.issubset(tf.columns):
+            st.error(
+                "Technical forecast CSV columns do not match. "
+                f"Available columns: {list(tf.columns)}"
+            )
+            st.stop()
+
+        if not required_accuracy.issubset(ta.columns):
+            st.error(
+                "Technical accuracy CSV columns do not match. "
+                f"Available columns: {list(ta.columns)}"
+            )
+            st.stop()
+
+        c1, c2 = st.columns(2)
+
+        with c1:
+            market_v2 = st.selectbox(
+                "Select crude benchmark",
+                sorted(tf["Market"].dropna().unique()),
+                key="technical_market_v2"
+            )
+
+        with c2:
+            horizons_v2 = sorted(
+                tf.loc[
+                    tf["Market"] == market_v2,
+                    "Horizon_Days"
+                ].dropna().astype(int).unique()
+            )
+
+            horizon_v2 = st.selectbox(
+                "Forecast horizon",
+                horizons_v2,
+                format_func=lambda x: f"{x} days",
+                key="technical_horizon_v2"
+            )
+
+        selected = tf[
+            (tf["Market"] == market_v2)
+            & (tf["Horizon_Days"] == horizon_v2)
+        ].copy()
+
+        selected["Forecast_Price"] = pd.to_numeric(
+            selected["Forecast_Price"], errors="coerce"
+        )
+        selected["Last_Price"] = pd.to_numeric(
+            selected["Last_Price"], errors="coerce"
+        )
+        selected = selected.dropna(
+            subset=["Forecast_Price", "Last_Price"]
+        )
+
+        if selected.empty:
+            st.warning("No forecasts for this selection.")
+        else:
+            latest_price = float(
+                selected["Last_Price"].iloc[0]
+            )
+
+            model_order = [
+                "Flat", "Ridge", "Machine Learning"
+            ]
+
+            model_prices = {
+                str(row["Model"]): float(row["Forecast_Price"])
+                for _, row in selected.iterrows()
+            }
+
+            st.markdown("#### Model price targets")
+
+            metric_cols = st.columns(3)
+
+            for col, model in zip(metric_cols, model_order):
+                price = model_prices.get(model)
+
+                with col:
+                    if price is not None:
+                        pct = (
+                            (price / latest_price - 1) * 100
+                            if latest_price != 0 else 0
+                        )
+                        st.metric(
+                            model,
+                            f"${price:,.2f}/bbl",
+                            f"{pct:+.2f}%"
+                        )
+                    else:
+                        st.metric(model, "N/A")
+
+            st.caption(
+                f"Last observed {market_v2} price: "
+                f"${latest_price:,.2f}/bbl. "
+                "Model targets are indicative, not guaranteed outcomes."
+            )
+
+            fig = go.Figure()
+
+            fig.add_hline(
+                y=latest_price,
+                line_dash="dash",
+                line_color="gray",
+                annotation_text="Last actual price"
+            )
+
+            colors = {
+                "Flat": "#64748b",
+                "Ridge": "#2563eb",
+                "Machine Learning": "#ea580c"
+            }
+
+            for model in model_order:
+                if model in model_prices:
+                    fig.add_trace(
+                        go.Bar(
+                            x=[model],
+                            y=[model_prices[model]],
+                            name=model,
+                            marker_color=colors[model],
+                            text=[
+                                f"${model_prices[model]:.2f}"
+                            ],
+                            textposition="outside"
+                        )
+                    )
+
+            fig.update_layout(
+                title=(
+                    f"{market_v2}: {horizon_v2}-Day "
+                    "Model Forecast Comparison"
+                ),
+                yaxis_title="USD per barrel",
+                xaxis_title="Forecast model",
+                height=450,
+                showlegend=False,
+                margin=dict(t=70)
+            )
+
+            st.plotly_chart(
+                fig,
+                use_container_width=True,
+                key="technical_model_chart_v2"
+            )
+
+        # ------------------------------------------
+        # HISTORICAL FORECAST ACCURACY
+        # ------------------------------------------
+
+        st.markdown("#### Historical Model Accuracy")
+
+        accuracy_row = ta[
+            (ta["Market"] == market_v2)
+            & (ta["Horizon_Days"] == horizon_v2)
+        ]
+
+        if not accuracy_row.empty:
+            a = accuracy_row.iloc[0]
+
+            mae_values = {
+                "Flat": float(a["Flat_MAE"]),
+                "Ridge": float(a["Ridge_MAE"]),
+                "Machine Learning": float(a["ML_MAE"])
+            }
+
+            best_model = min(
+                mae_values, key=mae_values.get
+            )
+
+            st.success(
+                f"Best historical model: {best_model} "
+                f"| MAE: ${mae_values[best_model]:.2f}/bbl"
+            )
+
+            accuracy_chart = go.Figure()
+
+            accuracy_chart.add_trace(
+                go.Bar(
+                    x=list(mae_values.keys()),
+                    y=list(mae_values.values()),
+                    marker_color=[
+                        "#16a34a" if m == best_model
+                        else "#94a3b8"
+                        for m in mae_values
+                    ],
+                    text=[
+                        f"${v:.2f}"
+                        for v in mae_values.values()
+                    ],
+                    textposition="outside"
+                )
+            )
+
+            accuracy_chart.update_layout(
+                title="Backtested Mean Absolute Error",
+                yaxis_title="MAE (USD per barrel)",
+                xaxis_title="Model",
+                height=380
+            )
+
+            st.plotly_chart(
+                accuracy_chart,
+                use_container_width=True,
+                key="technical_accuracy_chart_v2"
+            )
+
+            st.caption(
+                "Lower MAE is better. These results measure "
+                "historical out-of-sample forecast error, "
+                "not certainty about future prices."
+            )
+
+        # ------------------------------------------
+        # TECHNICAL SIGNALS
+        # ------------------------------------------
+
+        st.markdown("#### Technical Market Signals")
+
+        signal_row = ts[ts["Market"] == market_v2]
+
+        if not signal_row.empty:
+            s = signal_row.iloc[0]
+
+            signal_cols = st.columns(3)
+
+            with signal_cols[0]:
+                if "RSI_14" in ts.columns:
+                    st.metric(
+                        "14-Day RSI",
+                        f"{float(s['RSI_14']):.1f}"
+                    )
+
+            with signal_cols[1]:
+                if "MACD_Signal_Gap" in ts.columns:
+                    st.metric(
+                        "MACD Signal Gap",
+                        f"{float(s['MACD_Signal_Gap']):+.4f}"
+                    )
+
+            with signal_cols[2]:
+                if "Trend" in ts.columns:
+                    st.metric(
+                        "Technical Trend",
+                        str(s["Trend"])
+                    )
+
+            if "RSI_14" in ts.columns:
+                rsi = float(s["RSI_14"])
+
+                if rsi >= 70:
+                    st.info(
+                        "RSI is above 70: traditionally "
+                        "interpreted as overbought."
+                    )
+                elif rsi <= 30:
+                    st.info(
+                        "RSI is below 30: traditionally "
+                        "interpreted as oversold."
+                    )
+                else:
+                    st.info(
+                        "RSI is between 30 and 70: "
+                        "neither conventional extreme is triggered."
+                    )
+
+        # ------------------------------------------
+        # DATA & METHODOLOGY
+        # ------------------------------------------
+
+        with st.expander("Forecast methodology and raw data"):
+            st.write(
+                "Flat is a no-change price baseline. "
+                "Ridge is regularised linear regression. "
+                "Machine Learning is the fitted nonlinear "
+                "model from the Colab analysis."
+            )
+
+            st.write(
+                "Forecasts are model scenarios, not "
+                "market-implied forward prices. "
+                "Historical accuracy should be evaluated "
+                "using time-ordered, out-of-sample observations. "
+                "Technical indicators are descriptive and "
+                "do not establish causation."
+            )
+
+            st.dataframe(selected, use_container_width=True)
+            st.dataframe(ta, use_container_width=True)
+            st.dataframe(ts, use_container_width=True)
+
+            st.caption(
+                "Source: project historical price datasets "
+                "and Python model calculations. "
+                "Forecast dates and last-observation dates "
+                "are determined by the exported CSV snapshot."
+            )
+
+    except FileNotFoundError as error:
+        st.error(
+            f"Missing data file: {error}. "
+            "Check the energy_dashboard_data folder on GitHub."
+        )
+    except Exception as error:
+        st.error(
+            f"Technical forecasting section could not load: {error}"
+        )
