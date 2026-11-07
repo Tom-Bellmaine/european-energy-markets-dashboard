@@ -171,6 +171,132 @@ elif page == "Brent Analytics":
         f"{volatility:.1f}%"
     )
 
+
+
+    
+    # BRENT-WTI CRUDE SPREAD ANALYSIS
+    st.divider()
+    st.subheader("Brent–WTI Crude Oil Spread Analysis")
+
+    st.caption(
+        "Historical spot price differential between "
+        "Brent and WTI crude oil, in USD per barrel."
+    )
+
+    spread_data = pd.read_csv(
+        DATA_DIR / "brent_wti_spread.csv",
+        parse_dates=["Date"]
+    )
+
+    spread_data = spread_data.dropna(
+        subset=["Date", "Brent", "WTI", "Brent_WTI_Spread"]
+    ).sort_values("Date")
+
+    spread_period = st.selectbox(
+        "Spread analysis period",
+        ["1 Year", "3 Years", "5 Years", "10 Years"],
+        index=2,
+        key="brent_wti_period"
+    )
+
+    spread_years = int(spread_period.split()[0])
+
+    spread_data = spread_data[
+        spread_data["Date"] >= (
+            spread_data["Date"].max()
+            - pd.DateOffset(years=spread_years)
+        )
+    ].copy()
+
+    if spread_data.empty:
+        st.warning("No Brent–WTI observations available.")
+
+    else:
+        spread_data["Spread_MA90"] = (
+            spread_data["Brent_WTI_Spread"]
+            .rolling(90)
+            .mean()
+        )
+
+        latest_spread = spread_data["Brent_WTI_Spread"].iloc[-1]
+        average_spread = spread_data["Brent_WTI_Spread"].mean()
+
+        recent_date = (
+            spread_data["Date"].max()
+            - pd.Timedelta(days=28)
+        )
+
+        older_data = spread_data[
+            spread_data["Date"] <= recent_date
+        ]
+
+        four_week_change = (
+            latest_spread
+            - older_data["Brent_WTI_Spread"].iloc[-1]
+            if not older_data.empty
+            else float("nan")
+        )
+
+        col1, col2, col3 = st.columns(3)
+
+        col1.metric(
+            "Latest Brent–WTI Spread",
+            f"${latest_spread:,.2f}/bbl"
+        )
+
+        col2.metric(
+            "Period Average Spread",
+            f"${average_spread:,.2f}/bbl"
+        )
+
+        col3.metric(
+            "Approx. 4-Week Change",
+            f"{four_week_change:+.2f} USD/bbl"
+        )
+
+        fig_spread = go.Figure()
+
+        fig_spread.add_trace(go.Scatter(
+            x=spread_data["Date"],
+            y=spread_data["Brent_WTI_Spread"],
+            mode="lines",
+            name="Brent–WTI Spread"
+        ))
+
+        fig_spread.add_trace(go.Scatter(
+            x=spread_data["Date"],
+            y=spread_data["Spread_MA90"],
+            mode="lines",
+            name="90-Observation Moving Average"
+        ))
+
+        fig_spread.add_hline(
+            y=0,
+            line_dash="dash",
+            line_color="gray"
+        )
+
+        fig_spread.update_layout(
+            title="Historical Brent–WTI Crude Spread",
+            xaxis_title="Date",
+            yaxis_title="USD per barrel",
+            template="plotly_white",
+            hovermode="x unified"
+        )
+
+        st.plotly_chart(
+            fig_spread,
+            width="stretch"
+        )
+
+        st.caption(
+            f"Latest observation: "
+            f"{spread_data['Date'].max():%d %b %Y}. "
+            "Positive values indicate Brent trading "
+            "above WTI. These are spot benchmarks, "
+            "not futures calendar spreads."
+        )
+
 elif page == "European Fuel Markets":
 
     st.header("Northwest European Fuel Markets")
