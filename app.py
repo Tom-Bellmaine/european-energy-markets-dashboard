@@ -676,6 +676,136 @@ elif page == "Oil Market Fundamentals":
         "the cause of a market move or predict prices."
     )
 
+
+
+
+    # =====================================================
+    # FIVE-YEAR INVENTORY SEASONAL COMPARISON
+    # =====================================================
+
+    st.divider()
+    st.subheader("Inventories vs Five-Year Seasonal Average")
+
+    seasonal_file = DATA_DIR / "eia_inventory_seasonality.csv"
+
+    if seasonal_file.exists():
+
+        seasonal = pd.read_csv(
+            seasonal_file,
+            parse_dates=["Date"]
+        )
+
+        product_choice = st.selectbox(
+            "Select inventory product",
+            ["Crude Oil", "Gasoline", "Distillates"],
+            key="seasonal_inventory_product"
+        )
+
+        seasonal_data = seasonal[
+            seasonal["Product"] == product_choice
+        ].sort_values("Date").copy()
+
+        if seasonal_data.empty:
+            st.warning(
+                "No seasonal inventory data available "
+                "for this product."
+            )
+
+        else:
+            latest_seasonal = seasonal_data.iloc[-1]
+
+            c1, c2, c3 = st.columns(3)
+
+            c1.metric(
+                "Actual Inventories",
+                f"{latest_seasonal['Actual_MMbbl']:,.2f} million bbl"
+            )
+
+            c2.metric(
+                "Five-Year Seasonal Average",
+                f"{latest_seasonal['Five_Year_Avg_MMbbl']:,.2f} million bbl"
+            )
+
+            c3.metric(
+                "Deviation from Seasonal Average",
+                f"{latest_seasonal['Difference_Pct']:+.2f}%"
+            )
+
+            fig_seasonal = go.Figure()
+
+            fig_seasonal.add_trace(
+                go.Scatter(
+                    x=seasonal_data["Date"],
+                    y=seasonal_data["Actual_MMbbl"],
+                    mode="lines",
+                    name="Actual Inventories"
+                )
+            )
+
+            fig_seasonal.add_trace(
+                go.Scatter(
+                    x=seasonal_data["Date"],
+                    y=seasonal_data["Five_Year_Avg_MMbbl"],
+                    mode="lines",
+                    name="Five-Year Seasonal Average",
+                    line=dict(dash="dash")
+                )
+            )
+
+            fig_seasonal.update_layout(
+                title=f"{product_choice}: Actual vs Seasonal Inventories",
+                xaxis_title="Date",
+                yaxis_title="Million barrels",
+                template="plotly_white",
+                hovermode="x unified"
+            )
+
+            st.plotly_chart(
+                fig_seasonal,
+                use_container_width=True
+            )
+
+            deviation = float(
+                latest_seasonal["Difference_Pct"]
+            )
+
+            if deviation < 0:
+                interpretation = (
+                    f"{product_choice} inventories are "
+                    f"{abs(deviation):.2f}% below their "
+                    "five-year seasonal average."
+                )
+            elif deviation > 0:
+                interpretation = (
+                    f"{product_choice} inventories are "
+                    f"{deviation:.2f}% above their "
+                    "five-year seasonal average."
+                )
+            else:
+                interpretation = (
+                    f"{product_choice} inventories are "
+                    "in line with their seasonal average."
+                )
+
+            st.info(interpretation)
+
+            st.caption(
+                f"Latest observation: "
+                f"{latest_seasonal['Date']:%d %B %Y} | "
+                f"Reference years: "
+                f"{latest_seasonal['Reference_Years']} | "
+                "Source: US EIA historical weekly inventories. "
+                "Seasonal average calculated from the "
+                "same ISO calendar week over the preceding "
+                "five years."
+            )
+
+    else:
+        st.warning(
+            "Seasonal inventory CSV not found. "
+            "Upload eia_inventory_seasonality.csv "
+            "to energy_dashboard_data."
+        )
 elif page == "Brent Futures Market Structure":
 
     st.header("Brent Futures Market Structure")
