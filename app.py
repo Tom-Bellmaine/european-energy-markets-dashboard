@@ -12,7 +12,13 @@ st.set_page_config(
 )
 
 DATA_DIR = Path("energy_dashboard_data")
-
+@st.cache_data
+def load_eia_inventories():
+    data = pd.read_csv(
+        DATA_DIR / "eia_inventories.csv",
+        parse_dates=["Date"]
+    )
+    return data.sort_values("Date").reset_index(drop=True)
 # LOAD MARKET DATA
 @st.cache_data
 def load_data():
@@ -57,6 +63,7 @@ page = st.sidebar.radio(
     [
         "Market Overview",
         "Brent Analytics",
+        "Oil Market Fundamentals",
         "European Fuel Markets",
         "Commercial Scenarios",
         "Data & Methodology"
@@ -530,7 +537,142 @@ elif page == "European Fuel Markets":
                     f"more expensive in {country_a} than {country_b}. "
                     "This is not an executable arbitrage margin."
                 )
+elif page == "Oil Market Fundamentals":
 
+    st.header("US Oil Market Fundamentals")
+    st.caption(
+        "EIA weekly commercial crude oil, gasoline and "
+        "distillate inventories. Stock levels and weekly "
+        "changes are expressed in million barrels."
+    )
+
+    inventories = load_eia_inventories()
+
+    product_options = {
+        "Crude Oil": "Crude_Stocks",
+        "Gasoline": "Gasoline_Stocks",
+        "Distillates": "Distillate_Stocks"
+    }
+
+    product = st.selectbox(
+        "Select petroleum product",
+        list(product_options.keys())
+    )
+
+    period = st.selectbox(
+        "Historical period",
+        ["1 Year", "3 Years", "5 Years", "10 Years", "All Data"],
+        index=1
+    )
+
+    column = product_options[product]
+    latest = inventories.iloc[-1]
+
+    stock_level = latest[column]
+    weekly_change = latest[column + "_Change"]
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric(
+        "Latest Inventory",
+        f"{stock_level:,.2f} million bbl"
+    )
+
+    col2.metric(
+        "Weekly Stock Change",
+        f"{weekly_change:+,.3f} million bbl"
+    )
+
+    col3.metric(
+        "Market Movement",
+        "Build" if weekly_change > 0
+        else "Draw" if weekly_change < 0
+        else "Unchanged"
+    )
+
+    st.caption(
+        f"Latest EIA observation: "
+        f"{latest['Date']:%d %B %Y}"
+    )
+
+    data = inventories.copy()
+
+    if period != "All Data":
+        years = int(period.split()[0])
+        cutoff = data["Date"].max() - pd.DateOffset(
+            years=years
+        )
+        data = data[data["Date"] >= cutoff]
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=data["Date"],
+        y=data[column],
+        mode="lines",
+        name=f"{product} Inventories"
+    ))
+
+    fig.update_layout(
+        title=f"US {product} Inventory History",
+        xaxis_title="Date",
+        yaxis_title="Million barrels",
+        template="plotly_white",
+        hovermode="x unified"
+    )
+
+    st.plotly_chart(fig, width="stretch")
+
+    st.subheader("Weekly Inventory Builds and Draws")
+
+    fig_change = go.Figure()
+
+    fig_change.add_trace(go.Bar(
+        x=data["Date"],
+        y=data[column + "_Change"],
+        name="Weekly Change"
+    ))
+
+    fig_change.add_hline(y=0, line_dash="dash")
+
+    fig_change.update_layout(
+        title=f"Weekly {product} Stock Changes",
+        xaxis_title="Date",
+        yaxis_title="Million barrels",
+        template="plotly_white"
+    )
+
+    st.plotly_chart(fig_change, width="stretch")
+
+    st.subheader("Inventory Market Insights")
+
+    if weekly_change > 0:
+        interpretation = (
+            f"US {product.lower()} inventories increased "
+            f"by {weekly_change:.3f} million barrels "
+            f"in the latest reporting week."
+        )
+    elif weekly_change < 0:
+        interpretation = (
+            f"US {product.lower()} inventories decreased "
+            f"by {abs(weekly_change):.3f} million barrels "
+            f"in the latest reporting week."
+        )
+    else:
+        interpretation = (
+            f"US {product.lower()} inventories were "
+            f"unchanged in the latest reporting week."
+        )
+
+    st.info(interpretation)
+
+    st.caption(
+        "Source: US Energy Information Administration "
+        "(EIA), Weekly Petroleum Status Report. "
+        "Inventory changes alone do not establish "
+        "the cause of a market move or predict prices."
+    )
+    
 elif page == "Commercial Scenarios":
 
     st.header("Crude Purchase Cost Sensitivity")
